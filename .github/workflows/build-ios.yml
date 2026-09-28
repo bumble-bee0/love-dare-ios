@@ -1,0 +1,64 @@
+name: Build LoveDare iOS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find ZIP file
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ZIP file tidak ditemukan!"
+            exit 1
+          fi
+          echo "ZIP ditemukan: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Extract project
+        run: |
+          unzip -o "$ZIP_FILE" -d extracted
+          find extracted -maxdepth 3 -type f | head -50
+
+      - name: Find Xcode project
+        run: |
+          PROJECT=$(find extracted -name "LoveDare.xcodeproj" -type d | head -n 1)
+          if [ -z "$PROJECT" ]; then
+            echo "LoveDare.xcodeproj tidak ditemukan!"
+            exit 1
+          fi
+
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "Project ditemukan: $PROJECT"
+
+      - name: Build iOS project
+        run: |
+          xcodebuild \
+            -project "$PROJECT" \
+            -scheme LoveDare \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build \
+            | xcpretty
+
+      - name: Show build products
+        run: |
+          find ~/Library/Developer/Xcode/DerivedData \
+            -type d \
+            -name "*.app" \
+            -print
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LoveDare-iOS-Build
+          path: |
+            ~/Library/Developer/Xcode/DerivedData/**/Build/Products/Release-iphoneos/*.app
