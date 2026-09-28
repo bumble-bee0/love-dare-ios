@@ -14,51 +14,95 @@ jobs:
       - name: Find ZIP file
         run: |
           ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
+
           if [ -z "$ZIP_FILE" ]; then
             echo "ZIP file tidak ditemukan!"
             exit 1
           fi
+
           echo "ZIP ditemukan: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
       - name: Extract project
         run: |
+          mkdir -p extracted
           unzip -o "$ZIP_FILE" -d extracted
-          find extracted -maxdepth 3 -type f | head -50
+
+          echo "================================"
+          echo "Isi project setelah extract:"
+          echo "================================"
+
+          find extracted -maxdepth 3 -type f | head -100
 
       - name: Find Xcode project
         run: |
           PROJECT=$(find extracted -name "LoveDare.xcodeproj" -type d | head -n 1)
+
           if [ -z "$PROJECT" ]; then
-            echo "LoveDare.xcodeproj tidak ditemukan!"
+            echo "ERROR: LoveDare.xcodeproj tidak ditemukan!"
+            echo "Isi folder extracted:"
+            find extracted -maxdepth 5 -print
             exit 1
           fi
 
+          echo "================================"
+          echo "Xcode project ditemukan:"
+          echo "$PROJECT"
+          echo "================================"
+
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Project ditemukan: $PROJECT"
+
+      - name: Show Xcode information
+        run: |
+          xcodebuild -version
+          xcode-select -p
+
+      - name: Check project scheme
+        run: |
+          xcodebuild \
+            -project "$PROJECT" \
+            -list
 
       - name: Build iOS project
         run: |
+          echo "================================"
+          echo "BUILD LOVE DARE iOS"
+          echo "================================"
+
           xcodebuild \
             -project "$PROJECT" \
             -scheme LoveDare \
             -configuration Release \
             -sdk iphoneos \
+            -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build \
-            | xcpretty
+            build
 
-      - name: Show build products
+      - name: Find build products
         run: |
-          find ~/Library/Developer/Xcode/DerivedData \
+          echo "================================"
+          echo "HASIL BUILD:"
+          echo "================================"
+
+          find build \
             -type d \
             -name "*.app" \
             -print
 
-      - name: Upload build artifact
+          echo "================================"
+          echo "ISI FOLDER BUILD:"
+          echo "================================"
+
+          find build \
+            -maxdepth 5 \
+            -type d \
+            -print | head -100
+
+      - name: Upload iOS app
         uses: actions/upload-artifact@v4
         with:
           name: LoveDare-iOS-Build
           path: |
-            ~/Library/Developer/Xcode/DerivedData/**/Build/Products/Release-iphoneos/*.app
+            build/Build/Products/Release-iphoneos/*.app
+          if-no-files-found: error
