@@ -16,88 +16,135 @@ jobs:
           ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ZIP file tidak ditemukan!"
+            echo "ERROR: ZIP file tidak ditemukan!"
             exit 1
           fi
 
           echo "ZIP ditemukan: $ZIP_FILE"
           echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
 
-      - name: Extract project
+      - name: Extract game project
         run: |
           mkdir -p extracted
           unzip -o "$ZIP_FILE" -d extracted
 
-          echo "================================"
-          echo "Isi project setelah extract:"
-          echo "================================"
-
+          echo "Project hasil extract:"
           find extracted -maxdepth 3 -type f | head -100
 
-      - name: Find Xcode project
+      - name: Find project folder
         run: |
-          PROJECT=$(find extracted -name "LoveDare.xcodeproj" -type d | head -n 1)
+          PROJECT_DIR=$(find extracted -type f -name "LoveDareApp.swift" -exec dirname {} \; | head -n 1)
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: LoveDare.xcodeproj tidak ditemukan!"
-            echo "Isi folder extracted:"
-            find extracted -maxdepth 5 -print
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: LoveDareApp.swift tidak ditemukan!"
             exit 1
           fi
 
+          # LoveDareApp.swift berada di folder LoveDare
+          PROJECT_ROOT=$(dirname "$PROJECT_DIR")
+
+          echo "PROJECT_ROOT=$PROJECT_ROOT" >> "$GITHUB_ENV"
+
+          echo "Project root:"
+          echo "$PROJECT_ROOT"
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+
+      - name: Create clean Xcode project
+        run: |
+          cd "$PROJECT_ROOT"
+
+          cat > project.yml <<'EOF'
+          name: LoveDare
+
+          options:
+            bundleIdPrefix: com.clipvik
+            deploymentTarget:
+              iOS: "16.0"
+
+          settings:
+            base:
+              SWIFT_VERSION: "5.0"
+              TARGETED_DEVICE_FAMILY: "1,2"
+
+          targets:
+            LoveDare:
+              type: application
+              platform: iOS
+
+              sources:
+                - path: LoveDare
+
+              resources:
+                - path: LoveDare/GameResources
+                - path: LoveDare/Assets.xcassets
+
+              settings:
+                base:
+                  PRODUCT_BUNDLE_IDENTIFIER: com.clipvik.lovedare
+                  PRODUCT_NAME: Love Dare
+                  INFOPLIST_FILE: LoveDare/Info.plist
+                  GENERATE_INFOPLIST_FILE: NO
+                  CODE_SIGN_STYLE: Automatic
+          EOF
+
           echo "================================"
-          echo "Xcode project ditemukan:"
-          echo "$PROJECT"
+          echo "Membuat project Xcode baru..."
           echo "================================"
 
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          xcodegen generate
+
+          echo "================================"
+          echo "Project Xcode berhasil dibuat"
+          echo "================================"
+
+          ls -la
+          find . -maxdepth 2 -name "*.xcodeproj" -print
 
       - name: Show Xcode information
         run: |
           xcodebuild -version
           xcode-select -p
 
-      - name: Check project scheme
+      - name: Check generated Xcode project
         run: |
+          cd "$PROJECT_ROOT"
+
           xcodebuild \
-            -project "$PROJECT" \
+            -project LoveDare.xcodeproj \
             -list
 
-      - name: Build iOS project
+      - name: Build LoveDare iOS
         run: |
+          cd "$PROJECT_ROOT"
+
           echo "================================"
           echo "BUILD LOVE DARE iOS"
           echo "================================"
 
           xcodebuild \
-            -project "$PROJECT" \
+            -project LoveDare.xcodeproj \
             -scheme LoveDare \
             -configuration Release \
             -sdk iphoneos \
-            -derivedDataPath build \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$GITHUB_WORKSPACE/build" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             build
 
-      - name: Find build products
+      - name: Find iOS app
         run: |
           echo "================================"
-          echo "HASIL BUILD:"
+          echo "HASIL BUILD"
           echo "================================"
 
-          find build \
+          find "$GITHUB_WORKSPACE/build" \
             -type d \
             -name "*.app" \
             -print
-
-          echo "================================"
-          echo "ISI FOLDER BUILD:"
-          echo "================================"
-
-          find build \
-            -maxdepth 5 \
-            -type d \
-            -print | head -100
 
       - name: Upload iOS app
         uses: actions/upload-artifact@v4
